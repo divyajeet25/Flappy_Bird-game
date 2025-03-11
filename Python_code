@@ -1,0 +1,142 @@
+import tkinter as tk
+import random
+import os
+from PIL import Image, ImageTk
+import winsound
+
+WIDTH, HEIGHT = 400, 500
+BIRD_X = 50
+GRAVITY = 2
+JUMP_STRENGTH = -25
+PIPE_SPEED = 5
+PIPE_GAP = 150
+PIPE_WIDTH = 70
+
+if os.path.exists("highscore.txt"):
+    with open("highscore.txt", "r") as f:
+        HIGH_SCORE = int(f.read())
+else:
+    HIGH_SCORE = 0
+
+root = tk.Tk()
+root.title("Flappy Bird")
+root.geometry(f"{WIDTH}x{HEIGHT}")
+root.resizable(False, False)
+
+canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT)
+canvas.pack()
+
+bg_img = ImageTk.PhotoImage(Image.open("zground.png").resize((WIDTH, HEIGHT)))
+pipe_img = Image.open("pipe.png").resize((PIPE_WIDTH, 300))
+pipe_img = ImageTk.PhotoImage(pipe_img)
+bird_img = ImageTk.PhotoImage(Image.open("bird.png").resize((40, 30)))
+
+canvas.create_image(0, 0, anchor=tk.NW, image=bg_img)
+
+bird = canvas.create_image(BIRD_X, HEIGHT // 2, anchor=tk.NW, image=bird_img)
+
+pipes = []
+bird_velocity = 0
+score = 0
+game_over = False
+game_started = False
+
+start_text = canvas.create_text(WIDTH//2, HEIGHT//2, text="Press ENTER to Start", font=("Arial", 20), fill="white")
+
+def play_sound(sound_file):
+    winsound.PlaySound(sound_file, winsound.SND_ASYNC)
+
+def create_pipe():
+    if game_started and not game_over:
+        height = random.randint(150, 400)
+        top_pipe = canvas.create_image(WIDTH, height - PIPE_GAP - 300, anchor=tk.NW, image=pipe_img)
+        bottom_pipe = canvas.create_image(WIDTH, height, anchor=tk.NW, image=pipe_img)
+        pipes.append((top_pipe, bottom_pipe))
+        root.after(1500, create_pipe)
+
+def move_pipes():
+    global score, game_over
+    for top_pipe, bottom_pipe in pipes:
+        canvas.move(top_pipe, -PIPE_SPEED, 0)
+        canvas.move(bottom_pipe, -PIPE_SPEED, 0)
+
+        pipe_coords = canvas.coords(bottom_pipe)
+        if pipe_coords[0] < BIRD_X and canvas.itemcget(top_pipe, "tags") != "passed":
+            score += 1
+            canvas.itemconfig(top_pipe, tags="passed")
+
+        if check_collision(top_pipe) or check_collision(bottom_pipe):
+            game_over = True
+    pipes[:] = [(t, b) for t, b in pipes if canvas.coords(t)[0] > -PIPE_WIDTH]
+
+def check_collision(pipe):
+    bird_coords = canvas.coords(bird)
+    pipe_coords = canvas.coords(pipe)
+    bx, by = bird_coords[0], bird_coords[1]
+    px, py = pipe_coords[0], pipe_coords[1]
+
+    return (
+        bx < px + PIPE_WIDTH and
+        bx + 40 > px and
+        by < py + 300 and
+        by + 30 > py
+    )
+
+def jump(event=None):
+    global bird_velocity
+    if not game_over and game_started:
+        bird_velocity = JUMP_STRENGTH
+
+def update():
+    global bird_velocity, game_over, HIGH_SCORE
+    if game_started and not game_over:
+        bird_velocity += GRAVITY
+        canvas.move(bird, 0, bird_velocity)
+        move_pipes()
+        bird_coords = canvas.coords(bird)
+        if bird_coords[1] < 0 or bird_coords[1] > HEIGHT - 30:
+            game_over = True
+
+        if score > HIGH_SCORE:
+            HIGH_SCORE = score
+            with open("highscore.txt", "w") as f:
+                f.write(str(HIGH_SCORE))
+        canvas.itemconfig(score_text, text=f"Score: {score}")
+        canvas.itemconfig(high_score_text, text=f"High Score: {HIGH_SCORE}")
+        root.after(30, update)
+    elif game_over:
+        canvas.itemconfig(game_over_text, text="Game Over! Press R to Restart")
+
+def restart(event=None):
+    global bird_velocity, score, game_over, pipes, game_started
+    bird_velocity = 0
+    score = 0
+    game_over = False
+    game_started = True
+    canvas.coords(bird, BIRD_X, HEIGHT // 2)
+
+    for top_pipe, bottom_pipe in pipes:
+        canvas.delete(top_pipe)
+        canvas.delete(bottom_pipe)
+    pipes.clear()
+    canvas.itemconfig(game_over_text, text="")
+    update()
+    create_pipe()
+
+def start_game(event=None):
+    global game_started
+    if not game_started:
+        game_started = True
+        canvas.delete(start_text)
+        update()
+        create_pipe()
+
+score_text = canvas.create_text(10, 10, anchor="nw", text="Score: 0", font=("Arial", 16), fill="white")
+high_score_text = canvas.create_text(10, 40, anchor="nw", text=f"High Score: {HIGH_SCORE}", font=("Arial", 16), fill="white")
+game_over_text = canvas.create_text(WIDTH//2, HEIGHT//2, text="", font=("Arial", 20), fill="white")
+
+root.bind("<space>", jump)
+root.bind("r", restart)
+root.bind("<Return>", start_game)  # Press Enter to start
+
+root.mainloop()
